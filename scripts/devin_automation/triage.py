@@ -380,6 +380,7 @@ def run_triage(
         "tags": ["triage", f"issue-{issue_number}"],
         "max_acu_limit": max_acu,
         "title": f"Triage: {repo}#{issue_number}",
+        "bypass_approval": True,
     }
     if playbook_id:
         create_kwargs["playbook_id"] = playbook_id
@@ -504,6 +505,7 @@ def _handle_autonomous(
         "tags": ["implementation", f"issue-{issue_number}"],
         "max_acu_limit": max_acu,
         "title": f"Fix: {repo}#{issue_number}",
+        "bypass_approval": True,
     }
     if playbook_id:
         create_kwargs["playbook_id"] = playbook_id

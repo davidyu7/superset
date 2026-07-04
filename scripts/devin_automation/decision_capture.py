@@ -226,6 +226,7 @@ def run_capture(
         tags=["decision-capture", f"issue-{issue_number}"],
         max_acu_limit=max_acu,
         title=f"Decision capture: {repo}#{issue_number}",
+        bypass_approval=True,
     )
 
     devin_id = session.get("session_id")

@@ -99,6 +99,7 @@ class DevinClient:
         tags: list[str] | None = None,
         max_acu_limit: int | None = None,
         title: str | None = None,
+        bypass_approval: bool | None = None,
     ) -> dict[str, Any]:
         """POST /v3/organizations/{org_id}/sessions"""
         body: dict[str, Any] = {"prompt": prompt}
@@ -117,6 +118,8 @@ class DevinClient:
             body["max_acu_limit"] = max_acu_limit
         if title:
             body["title"] = title
+        if bypass_approval is not None:
+            body["bypass_approval"] = bypass_approval
         return self._request("POST", "/sessions", json_body=body)
 
     def get_session(self, devin_id: str) -> dict[str, Any]:
