@@ -1,0 +1,52 @@
+name: Devin Feedback Loop
+
+on:
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  process-feedback:
+    runs-on: ubuntu-24.04
+    # Only trigger on @devin-bot mentions (modeled on supersetbot.yml)
+    if: >
+      github.event_name == 'issue_comment' &&
+      contains(github.event.comment.body, '@devin-bot')
+    steps:
+      - name: Add thumbs-up reaction
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/')
+            await github.rest.reactions.createForIssueComment({
+              owner,
+              repo,
+              comment_id: context.payload.comment.id,
+              content: '+1'
+            });
+
+      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests pyyaml
+
+      - name: Process directives
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          DEVIN_ORG_ID: ${{ secrets.DEVIN_ORG_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          PYTHONPATH: ${{ github.workspace }}/scripts/devin_automation
+        run: python scripts/devin_automation/policy.py
