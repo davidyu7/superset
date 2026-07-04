@@ -42,6 +42,7 @@ import re
 import sys
 from typing import Any
 
+import requests
 import yaml
 from devin_client import DevinClient, DevinClientError
 
@@ -193,9 +194,37 @@ def _resolve_folder_id(client: DevinClient, folder_name: str) -> str | None:
     return None
 
 
+def _post_confirmation(
+    repo: str,
+    issue_number: int,
+    directives: list[dict[str, str]],
+    token: str,
+) -> None:
+    """Reply on the issue confirming which directives were saved."""
+    lines = ["\u2705 **Triage policy updated.** Saved directives:\n"]
+    for d in directives:
+        reasoning = d.get("reasoning", "")
+        suffix = f" \u2014 _{reasoning}_" if reasoning else ""
+        lines.append(f"- `{d['type']}`: **{d['pattern']}**{suffix}")
+    lines.append("\nFuture triage sessions will consult these rules.")
+    body = "\n".join(lines)
+    url = f"https://api.github.com/repos/{repo}/issues/{issue_number}/comments"
+    requests.post(
+        url,
+        headers={
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github+json",
+        },
+        json={"body": body},
+        timeout=30,
+    )
+
+
 def main() -> None:
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     comment_body = os.environ.get("COMMENT_BODY", "")
+    github_token = os.environ.get("GITHUB_TOKEN", "")
+    issue_number_str = os.environ.get("ISSUE_NUMBER", "0")
 
     if not repo:
         logger.error("GITHUB_REPOSITORY is required")
@@ -208,6 +237,10 @@ def main() -> None:
 
     logger.info("Found %d directive(s): %s", len(directives), directives)
     update_policy(repo, directives)
+
+    issue_number = int(issue_number_str)
+    if github_token and issue_number:
+        _post_confirmation(repo, issue_number, directives, github_token)
 
 
 if __name__ == "__main__":

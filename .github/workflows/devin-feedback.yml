@@ -28,20 +28,67 @@ jobs:
               content: '+1'
             });
 
-      - name: Check commenter authorization
+      - name: Check for help request and commenter authorization
         id: auth
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
+            const body = context.payload.comment.body;
+            const helpRe = /@devin-bot\s+help\b/i;
+            const directiveRe = /@devin-bot\s+(always-autonomous|always-discuss):/i;
+            const isHelp = helpRe.test(body);
+            const hasDirective = directiveRe.test(body);
+
+            // Reply with usage if "@devin-bot help" or no recognized directive
+            if (isHelp || !hasDirective) {
+              const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
+              const helpBody = [
+                '### \uD83E\uDD16 `@devin-bot` usage',
+                '',
+                'Steer how Devin triages future issues by adding a directive:',
+                '',
+                '| Command | Effect |',
+                '|---|---|',
+                '| `@devin-bot always-autonomous: <topic>` | Issues matching `<topic>` get fixed automatically |',
+                '| `@devin-bot always-discuss: <topic>` | Issues matching `<topic>` always go to team discussion |',
+                '| `@devin-bot help` | Show this message |',
+                '',
+                'Add reasoning after `\u2014` or `--` to explain *why*:',
+                '',
+                '```',
+                '@devin-bot always-discuss: import/export \u2014 touches serialization pipeline; get team sign-off',
+                '@devin-bot always-autonomous: typo fixes -- low-risk, no review needed',
+                '```',
+                '',
+                'Only **repo members, collaborators, and owners** can set directives.',
+              ].join('\n');
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: context.issue.number,
+                body: helpBody,
+              });
+              if (!hasDirective) {
+                core.setOutput('authorized', 'false');
+                return;
+              }
+            }
+
             const association = context.payload.comment.author_association;
             const allowed = ['OWNER', 'MEMBER', 'COLLABORATOR'];
             const authorized = allowed.includes(association);
             core.setOutput('authorized', authorized.toString());
             if (!authorized) {
-              core.info(
-                `Commenter ${context.payload.comment.user.login} has ` +
-                `association '${association}'; skipping directive processing.`
-              );
+              const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: context.issue.number,
+                body: `\u26A0\uFE0F @${context.payload.comment.user.login} ` +
+                  'Only repo members, collaborators, and owners can set ' +
+                  '`@devin-bot` directives. Your comment was acknowledged ' +
+                  'but no policy changes were made.',
+              });
             }
 
       - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
@@ -68,5 +115,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           COMMENT_BODY: ${{ github.event.comment.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
           PYTHONPATH: ${{ github.workspace }}/scripts/devin_automation
         run: python scripts/devin_automation/policy.py
