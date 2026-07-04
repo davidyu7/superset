@@ -250,6 +250,76 @@ def _build_status_comment(
     return "\n".join(parts)
 
 
+def _find_existing_prs(
+    repo: str,
+    issue_number: int,
+    token: str,
+) -> list[dict[str, str]]:
+    """Search for open PRs that reference this issue."""
+    if not token:
+        return []
+
+    headers = _gh_headers(token)
+    existing: list[dict[str, str]] = []
+
+    # Check issue timeline for cross-referenced PRs
+    url = f"{_GH_API}/repos/{repo}/issues/{issue_number}/timeline"
+    page = 1
+    while True:
+        resp = requests.get(
+            url,
+            headers={
+                **headers,
+                "Accept": "application/vnd.github.mockingbird-preview+json",
+            },
+            params={"per_page": 100, "page": page},
+            timeout=30,
+        )
+        if not resp.ok:
+            break
+        events = resp.json()
+        if not events:
+            break
+        for event in events:
+            if event.get("event") == "cross-referenced":
+                source = event.get("source", {})
+                issue_data = source.get("issue", {})
+                pr_info = issue_data.get("pull_request", {})
+                if pr_info and issue_data.get("state") == "open":
+                    existing.append(
+                        {
+                            "number": str(issue_data.get("number", "")),
+                            "title": issue_data.get("title", ""),
+                            "url": issue_data.get("html_url", ""),
+                        }
+                    )
+        if len(events) < 100:
+            break
+        page += 1
+
+    return existing
+
+
+def _build_existing_pr_context(existing_prs: list[dict[str, str]]) -> str:
+    """Format existing PR info for injection into the triage prompt."""
+    if not existing_prs:
+        return ""
+
+    lines = [
+        "\n## Existing PRs addressing this issue",
+        "NOTE: The following open PRs already reference this issue:",
+    ]
+    for pr in existing_prs:
+        lines.append(f"- PR #{pr['number']}: {pr['title']} ({pr['url']})")
+    lines.append(
+        "\nConsider whether this issue is already being addressed. "
+        "If an existing PR looks adequate, recommend `needs_discussion` "
+        "with reasoning that a PR already exists and needs review rather "
+        "than starting a new implementation."
+    )
+    return "\n".join(lines)
+
+
 def _get_knowledge_ids(client: DevinClient, repo: str) -> list[str]:
     """Fetch note IDs for triage-policy notes pinned to this repo."""
     try:
@@ -285,10 +355,22 @@ def run_triage(
 
     knowledge_ids = _get_knowledge_ids(client, repo)
 
+    # ── 0. Check for existing PRs ────────────────────────────────────────
+    existing_prs = _find_existing_prs(repo, issue_number, github_token)
+    pr_context = _build_existing_pr_context(existing_prs)
+    if existing_prs:
+        logger.info(
+            "Found %d existing open PR(s) for issue #%d",
+            len(existing_prs),
+            issue_number,
+        )
+
     # ── 1. Start scoping session ─────────────────────────────────────────
     prompt = _build_triage_prompt(
         repo, issue_number, issue_title, issue_body, maintainer_team
     )
+    if pr_context:
+        prompt += pr_context
 
     create_kwargs: dict[str, Any] = {
         "prompt": prompt,
@@ -305,7 +387,26 @@ def run_triage(
         create_kwargs["knowledge_ids"] = knowledge_ids
 
     session = client.create_session(**create_kwargs)
-    devin_id: str = session["devin_id"]
+    devin_id = session.get("session_id")
+    if not devin_id:
+        logger.error(
+            "create_session returned no session_id. Response: %s",
+            json.dumps(session, indent=2),
+        )
+        _upsert_issue_comment(
+            repo,
+            issue_number,
+            _build_status_comment(
+                marker,
+                None,
+                "",
+                None,
+                "Triage failed (session creation error)",
+            ),
+            marker,
+            github_token,
+        )
+        sys.exit(1)
     session_url: str = session.get("url", f"https://app.devin.ai/sessions/{devin_id}")
 
     logger.info("Scoping session started: %s", session_url)
@@ -408,7 +509,13 @@ def _handle_autonomous(
         create_kwargs["playbook_id"] = playbook_id
 
     impl_session = client.create_session(**create_kwargs)
-    impl_id: str = impl_session["devin_id"]
+    impl_id = impl_session.get("session_id")
+    if not impl_id:
+        logger.error(
+            "Implementation create_session returned no session_id. Response: %s",
+            json.dumps(impl_session, indent=2),
+        )
+        return
     impl_url: str = impl_session.get("url", f"https://app.devin.ai/sessions/{impl_id}")
 
     logger.info("Implementation session started: %s", impl_url)

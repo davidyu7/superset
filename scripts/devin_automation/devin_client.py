@@ -79,6 +79,7 @@ class DevinClient:
             timeout=60,
         )
         if not resp.ok:
+            logger.error("%s %s -> %d: %s", method, url, resp.status_code, resp.text)
             raise DevinClientError(f"{method} {url} -> {resp.status_code}: {resp.text}")
         if resp.status_code == 204:
             return {}
