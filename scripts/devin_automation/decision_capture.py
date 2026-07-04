@@ -75,7 +75,7 @@ in {repo}.
 
 3. Create an ``architectural-decision`` knowledge note via the Devin
    knowledge API with:
-   - ``name``: "architectural-decision:{repo}#{{issue_number}}: {{short_title}}"
+   - ``name``: "architectural-decision:{repo}#{issue_number}: {{short_title}}"
    - ``trigger``: "Precedent for issues related to: {{topic_keywords}}"
    - ``pinned_repo``: "{repo}"
    - ``body``: The SIP-structured summary

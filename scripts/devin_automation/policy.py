@@ -68,21 +68,42 @@ def load_config() -> dict[str, Any]:
 def parse_directives(comment_body: str) -> list[dict[str, str]]:
     """Extract ``@devin-bot`` directives from a comment.
 
-    Supports an optional free-text reasoning after ``—`` or ``--``::
+    Supports an optional free-text reasoning after ``—`` or ``--``.
+    Reasoning may span multiple lines::
 
         @devin-bot always-discuss: import/export — touches serialization
-        pipeline; always get team sign-off
+        pipeline and has historically caused migration issues;
+        always get team sign-off
     """
+    lines = comment_body.splitlines()
     directives: list[dict[str, str]] = []
-    for match in DIRECTIVE_RE.finditer(comment_body):
+
+    i = 0
+    while i < len(lines):
+        match = DIRECTIVE_RE.search(lines[i])
+        if not match:
+            i += 1
+            continue
+
         directive_type = match.group(1).strip().lower()
         raw_value = match.group(2).strip()
+
+        # Collect continuation lines (not blank, not a new directive)
+        i += 1
+        while i < len(lines):
+            cont = lines[i].strip()
+            if not cont or DIRECTIVE_RE.search(lines[i]):
+                break
+            raw_value += " " + cont
+            i += 1
+
         parts = _REASONING_SEP_RE.split(raw_value, maxsplit=1)
         topic = parts[0].strip()
         entry: dict[str, str] = {"type": directive_type, "pattern": topic}
         if len(parts) > 1 and parts[1].strip():
             entry["reasoning"] = parts[1].strip()
         directives.append(entry)
+
     return directives
 
 
