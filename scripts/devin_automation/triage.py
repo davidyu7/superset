@@ -387,7 +387,26 @@ def run_triage(
         create_kwargs["knowledge_ids"] = knowledge_ids
 
     session = client.create_session(**create_kwargs)
-    devin_id: str = session["devin_id"]
+    devin_id = session.get("session_id")
+    if not devin_id:
+        logger.error(
+            "create_session returned no session_id. Response: %s",
+            json.dumps(session, indent=2),
+        )
+        _upsert_issue_comment(
+            repo,
+            issue_number,
+            _build_status_comment(
+                marker,
+                None,
+                "",
+                None,
+                "Triage failed (session creation error)",
+            ),
+            marker,
+            github_token,
+        )
+        sys.exit(1)
     session_url: str = session.get("url", f"https://app.devin.ai/sessions/{devin_id}")
 
     logger.info("Scoping session started: %s", session_url)
@@ -490,7 +509,13 @@ def _handle_autonomous(
         create_kwargs["playbook_id"] = playbook_id
 
     impl_session = client.create_session(**create_kwargs)
-    impl_id: str = impl_session["devin_id"]
+    impl_id = impl_session.get("session_id")
+    if not impl_id:
+        logger.error(
+            "Implementation create_session returned no session_id. Response: %s",
+            json.dumps(impl_session, indent=2),
+        )
+        return
     impl_url: str = impl_session.get("url", f"https://app.devin.ai/sessions/{impl_id}")
 
     logger.info("Implementation session started: %s", impl_url)

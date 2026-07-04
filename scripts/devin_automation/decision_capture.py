@@ -228,7 +228,13 @@ def run_capture(
         title=f"Decision capture: {repo}#{issue_number}",
     )
 
-    devin_id: str = session["devin_id"]
+    devin_id = session.get("session_id")
+    if not devin_id:
+        logger.error(
+            "create_session returned no session_id. Response keys: %s",
+            list(session.keys()),
+        )
+        sys.exit(1)
     session_url: str = session.get("url", f"https://app.devin.ai/sessions/{devin_id}")
 
     logger.info("Decision capture session started: %s", session_url)
