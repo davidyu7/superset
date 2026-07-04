@@ -7,6 +7,7 @@ on:
 permissions:
   issues: write
   contents: read
+  members: read
 
 jobs:
   process-feedback:
@@ -28,20 +29,40 @@ jobs:
               content: '+1'
             });
 
+      - name: Check commenter authorization
+        id: auth
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const association = context.payload.comment.author_association;
+            const allowed = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            const authorized = allowed.includes(association);
+            core.setOutput('authorized', authorized.toString());
+            if (!authorized) {
+              core.info(
+                `Commenter ${context.payload.comment.user.login} has ` +
+                `association '${association}'; skipping directive processing.`
+              );
+            }
+
       - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
+        if: steps.auth.outputs.authorized == 'true'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
       - name: Set up Python
+        if: steps.auth.outputs.authorized == 'true'
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
 
       - name: Install dependencies
+        if: steps.auth.outputs.authorized == 'true'
         run: pip install requests pyyaml
 
       - name: Process directives
+        if: steps.auth.outputs.authorized == 'true'
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           DEVIN_ORG_ID: ${{ secrets.DEVIN_ORG_ID }}

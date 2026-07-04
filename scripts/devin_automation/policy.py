@@ -79,10 +79,10 @@ def _note_trigger(repo: str) -> str:
 
 def _read_existing_rules(
     client: DevinClient, repo: str
-) -> tuple[str | None, list[dict[str, str]]]:
+) -> tuple[str | None, str | None, list[dict[str, str]]]:
     """Fetch the existing triage-policy note for this repo.
 
-    Returns (note_id_or_None, existing_rules_list).
+    Returns (note_id_or_None, folder_id_or_None, existing_rules_list).
     """
     try:
         notes = client.list_knowledge_notes(
@@ -91,7 +91,7 @@ def _read_existing_rules(
         )
     except DevinClientError:
         logger.warning("Could not fetch existing triage-policy notes")
-        return None, []
+        return None, None, []
 
     name = _note_name(repo)
     for note in notes:
@@ -101,9 +101,9 @@ def _read_existing_rules(
                 rules: list[dict[str, str]] = json.loads(body)
             except (json.JSONDecodeError, TypeError):
                 rules = []
-            return note.get("note_id"), rules
+            return note.get("note_id"), note.get("folder_id"), rules
 
-    return None, []
+    return None, None, []
 
 
 def _merge_rules(
@@ -113,7 +113,8 @@ def _merge_rules(
     """Merge new directives into existing rules, deduplicating by pattern."""
     by_pattern: dict[str, dict[str, str]] = {}
     for rule in existing:
-        by_pattern[rule["pattern"]] = rule
+        if "pattern" in rule:
+            by_pattern[rule["pattern"]] = rule
     for directive in new_directives:
         by_pattern[directive["pattern"]] = directive
     return list(by_pattern.values())
@@ -131,7 +132,7 @@ def update_policy(
         "triage_policy", "devin-triage-policy"
     )
 
-    note_id, existing_rules = _read_existing_rules(client, repo)
+    note_id, existing_folder_id, existing_rules = _read_existing_rules(client, repo)
     merged = _merge_rules(existing_rules, directives)
     body = json.dumps(merged, indent=2)
 
@@ -145,6 +146,7 @@ def update_policy(
             body=body,
             trigger=trigger,
             pinned_repo=repo,
+            folder_id=existing_folder_id,
         )
         logger.info("Updated triage-policy note %s with %d rules", note_id, len(merged))
     else:

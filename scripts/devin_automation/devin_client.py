@@ -191,7 +191,7 @@ class DevinClient:
         if folder_path:
             params["folder_path"] = folder_path
         resp = self._request("GET", "/knowledge/notes", params=params)
-        return resp.get("items", resp.get("data", [resp] if "note_id" in resp else []))
+        return resp.get("items", resp.get("data", []))
 
     def create_knowledge_note(
         self,

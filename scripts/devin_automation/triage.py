@@ -502,9 +502,20 @@ def _upsert_issue_comment(
     url = f"{_GH_API}/repos/{repo}/issues/{issue_number}/comments"
     headers = _gh_headers(token)
 
-    resp = requests.get(url, headers=headers, timeout=30)
-    if resp.ok:
-        for comment in resp.json():
+    page = 1
+    while True:
+        resp = requests.get(
+            url,
+            headers=headers,
+            params={"per_page": 100, "page": page},
+            timeout=30,
+        )
+        if not resp.ok:
+            break
+        comments = resp.json()
+        if not comments:
+            break
+        for comment in comments:
             if marker in comment.get("body", ""):
                 update_url = f"{_GH_API}/repos/{repo}/issues/comments/{comment['id']}"
                 requests.patch(
@@ -515,6 +526,9 @@ def _upsert_issue_comment(
                 )
                 logger.info("Updated status comment %s", comment["id"])
                 return
+        if len(comments) < 100:
+            break
+        page += 1
 
     requests.post(url, headers=headers, json={"body": body}, timeout=30)
     logger.info("Created status comment on #%d", issue_number)
