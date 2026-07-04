@@ -18,9 +18,15 @@
 
 Called by ``.github/workflows/devin-feedback.yml``.
 
-Parses directives from issue/PR comments:
-  ``@devin-bot always-autonomous: <pattern>``
-  ``@devin-bot always-discuss: <pattern>``
+Parses directives from issue/PR comments::
+
+    @devin-bot always-autonomous: <topic>
+    @devin-bot always-discuss: <topic>
+    @devin-bot always-discuss: <topic> — <free-text reasoning>
+
+The optional reasoning after ``—`` (em-dash) or ``--`` (double-hyphen) is
+stored alongside the rule and injected into future triage session prompts
+so Devin understands *why* the team wants a topic handled a certain way.
 
 Persists them as ``triage-policy`` knowledge notes via READ-MODIFY-WRITE
 (PUT is full-replace per DEVIN_API_FINDINGS.md §1.2).
@@ -50,6 +56,8 @@ DIRECTIVE_RE = re.compile(
     re.IGNORECASE,
 )
 
+_REASONING_SEP_RE = re.compile(r"\s*(?:\u2014|--)\s*")
+
 
 def load_config() -> dict[str, Any]:
     with open(CONFIG_PATH) as f:
@@ -57,12 +65,23 @@ def load_config() -> dict[str, Any]:
 
 
 def parse_directives(comment_body: str) -> list[dict[str, str]]:
-    """Extract ``@devin-bot`` directives from a comment."""
+    """Extract ``@devin-bot`` directives from a comment.
+
+    Supports an optional free-text reasoning after ``—`` or ``--``::
+
+        @devin-bot always-discuss: import/export — touches serialization
+        pipeline; always get team sign-off
+    """
     directives: list[dict[str, str]] = []
     for match in DIRECTIVE_RE.finditer(comment_body):
         directive_type = match.group(1).strip().lower()
-        pattern = match.group(2).strip()
-        directives.append({"type": directive_type, "pattern": pattern})
+        raw_value = match.group(2).strip()
+        parts = _REASONING_SEP_RE.split(raw_value, maxsplit=1)
+        topic = parts[0].strip()
+        entry: dict[str, str] = {"type": directive_type, "pattern": topic}
+        if len(parts) > 1 and parts[1].strip():
+            entry["reasoning"] = parts[1].strip()
+        directives.append(entry)
     return directives
 
 

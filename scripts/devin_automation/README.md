@@ -152,15 +152,24 @@ Maintainers can steer triage policy by commenting on any issue or PR:
 @devin-bot always-discuss: database migration changes
 ```
 
-These directives are persisted as `triage-policy` knowledge notes and
-consulted by future triage sessions.
+Add free-text reasoning after `—` (em-dash) or `--` to explain *why*:
+
+```
+@devin-bot always-discuss: import/export — touches the serialization pipeline
+and has historically caused migration issues; always get team sign-off
+
+@devin-bot always-autonomous: typo fixes -- low-risk, no review needed
+```
+
+The reasoning is stored alongside the rule and injected into future triage
+session prompts so Devin understands the team’s intent, not just the topic.
 
 ## Knowledge note categories
 
 ### `triage-policy`
 - **Name format:** `triage-policy:<owner/repo>`
 - **Trigger:** "Triage policy rules for <repo>"
-- **Body:** JSON array of `{ "type": "always-autonomous"|"always-discuss", "pattern": "..." }`
+- **Body:** JSON array of `{ "type": "...", "pattern": "...", "reasoning": "..." }` (reasoning is optional)
 - **Managed by:** `policy.py` via READ-MODIFY-WRITE (PUT is full-replace per
   [DEVIN_API_FINDINGS.md §1.2](DEVIN_API_FINDINGS.md#12-requestresponse-schema-v3-create--update-body))
 
