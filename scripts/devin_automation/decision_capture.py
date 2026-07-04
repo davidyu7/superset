@@ -114,6 +114,55 @@ def _find_linked_prs(
     return linked
 
 
+def _get_pr_files(
+    repo: str,
+    pr_number: str,
+    token: str,
+) -> list[str]:
+    """Return the list of file paths changed by a PR."""
+    headers = _gh_headers(token)
+    url = f"{_GH_API}/repos/{repo}/pulls/{pr_number}/files"
+    files: list[str] = []
+    page = 1
+    while True:
+        resp = requests.get(
+            url,
+            headers=headers,
+            params={"per_page": 100, "page": page},
+            timeout=30,
+        )
+        if not resp.ok:
+            break
+        items = resp.json()
+        if not items:
+            break
+        files.extend(f.get("filename", "") for f in items)
+        if len(items) < 100:
+            break
+        page += 1
+    return files
+
+
+def _is_automation_only(
+    repo: str,
+    linked_prs: list[dict[str, str]],
+    exclude_prefixes: list[str],
+    token: str,
+) -> bool:
+    """Return True if every linked PR touches only excluded paths."""
+    if not linked_prs or not token or not exclude_prefixes:
+        return False
+
+    for pr in linked_prs:
+        files = _get_pr_files(repo, pr["number"], token)
+        if not files:
+            return False
+        for f in files:
+            if not any(f.startswith(p) for p in exclude_prefixes):
+                return False
+    return True
+
+
 def _build_pr_context(linked_prs: list[dict[str, str]]) -> str:
     """Format linked PR info for the capture prompt."""
     if not linked_prs:
@@ -273,6 +322,13 @@ def run_capture(
             len(linked_prs),
             issue_number,
         )
+
+    exclude_prefixes: list[str] = config.get("decision_capture_exclude_paths", [])
+    if _is_automation_only(repo, linked_prs, exclude_prefixes, github_token):
+        logger.info(
+            "All linked PRs touch only automation paths — skipping decision capture"
+        )
+        return
 
     prompt = _build_capture_prompt(
         repo, issue_number, issue_title, issue_body, linked_prs
