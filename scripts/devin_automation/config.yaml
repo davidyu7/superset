@@ -1,0 +1,66 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# ── Devin Automation Configuration ──
+# All tunables in one place. When porting to another repo:
+#   1. Copy .github/workflows/devin-*.yml + scripts/devin_automation/*
+#   2. Set DEVIN_API_KEY and DEVIN_ORG_ID as repo secrets
+#   3. Run: python scripts/devin_automation/bootstrap.py
+#   4. Adjust values below to taste
+
+# ── Triage ──
+confidence_threshold: 0.7
+
+# ── Maintainer team ──
+# GitHub team to @-mention on SIP-scale changes (default per .github/ISSUE_TEMPLATE/sip.md)
+maintainer_team: "apache/superset-committers"
+
+# ── Labels ──
+labels:
+  needs_discussion: "devin:needs-discussion"
+  pr_opened: "devin:pr-opened"
+  report: "devin-report"
+  triage_in_progress: "devin:triage-in-progress"
+
+# ── Knowledge note folders ──
+knowledge_folders:
+  triage_policy: "devin-triage-policy"
+  architectural_decision: "devin-architectural-decisions"
+
+# ── Playbook ──
+# Set after creating a triage playbook in the Devin UI; empty string disables
+playbook_id: ""
+
+# ── Weekly report schedule ──
+# RRULE per iCalendar spec (§2.5 of DEVIN_API_FINDINGS.md)
+report_schedule_rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0;BYSECOND=0"
+report_schedule_name: "superset-weekly-report"
+
+# ── Slack delivery ──
+# Channel ID for the weekly report; empty string disables Slack delivery
+slack_channel_id: ""
+
+# ── Session limits ──
+max_acu_limit: 10
+
+# ── Polling ──
+poll_interval_seconds: 30
+poll_max_attempts: 120
+
+# ── Comment marker ──
+# Hidden HTML marker for upsert-by-marker pattern (modeled on superset-translations-comment.yml)
+comment_marker: "<!-- devin-bot -->"

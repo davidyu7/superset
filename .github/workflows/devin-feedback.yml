@@ -1,0 +1,120 @@
+name: Devin Feedback Loop
+
+on:
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  process-feedback:
+    runs-on: ubuntu-24.04
+    # Only trigger on @devin-bot mentions (modeled on supersetbot.yml)
+    if: >
+      github.event_name == 'issue_comment' &&
+      contains(github.event.comment.body, '@devin-bot')
+    steps:
+      - name: Add thumbs-up reaction
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/')
+            await github.rest.reactions.createForIssueComment({
+              owner,
+              repo,
+              comment_id: context.payload.comment.id,
+              content: '+1'
+            });
+
+      - name: Check for help request and commenter authorization
+        id: auth
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const body = context.payload.comment.body;
+            const helpRe = /@devin-bot\s+help\b/i;
+            const directiveRe = /@devin-bot\s+(always-autonomous|always-discuss):/i;
+            const isHelp = helpRe.test(body);
+            const hasDirective = directiveRe.test(body);
+
+            // Reply with usage if "@devin-bot help" or no recognized directive
+            if (isHelp || !hasDirective) {
+              const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
+              const helpBody = [
+                '### \uD83E\uDD16 `@devin-bot` usage',
+                '',
+                'Steer how Devin triages future issues by adding a directive:',
+                '',
+                '| Command | Effect |',
+                '|---|---|',
+                '| `@devin-bot always-autonomous: <topic>` | Issues matching `<topic>` get fixed automatically |',
+                '| `@devin-bot always-discuss: <topic>` | Issues matching `<topic>` always go to team discussion |',
+                '| `@devin-bot help` | Show this message |',
+                '',
+                'Add reasoning after `\u2014` or `--` to explain *why*:',
+                '',
+                '```',
+                '@devin-bot always-discuss: import/export \u2014 touches serialization pipeline; get team sign-off',
+                '@devin-bot always-autonomous: typo fixes -- low-risk, no review needed',
+                '```',
+                '',
+                'Only **repo members, collaborators, and owners** can set directives.',
+              ].join('\n');
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: context.issue.number,
+                body: helpBody,
+              });
+              if (!hasDirective) {
+                core.setOutput('authorized', 'false');
+                return;
+              }
+            }
+
+            const association = context.payload.comment.author_association;
+            const allowed = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            const authorized = allowed.includes(association);
+            core.setOutput('authorized', authorized.toString());
+            if (!authorized) {
+              const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: context.issue.number,
+                body: `\u26A0\uFE0F @${context.payload.comment.user.login} ` +
+                  'Only repo members, collaborators, and owners can set ' +
+                  '`@devin-bot` directives. Your comment was acknowledged ' +
+                  'but no policy changes were made.',
+              });
+            }
+
+      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
+        if: steps.auth.outputs.authorized == 'true'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        if: steps.auth.outputs.authorized == 'true'
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        if: steps.auth.outputs.authorized == 'true'
+        run: pip install requests pyyaml
+
+      - name: Process directives
+        if: steps.auth.outputs.authorized == 'true'
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          DEVIN_ORG_ID: ${{ secrets.DEVIN_ORG_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          PYTHONPATH: ${{ github.workspace }}/scripts/devin_automation
+        run: python scripts/devin_automation/policy.py

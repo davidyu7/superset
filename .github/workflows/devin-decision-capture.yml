@@ -1,0 +1,40 @@
+name: Devin Decision Capture
+
+on:
+  issues:
+    types: [closed]
+
+permissions:
+  issues: read
+  contents: read
+
+jobs:
+  capture-decision:
+    runs-on: ubuntu-24.04
+    # Only act on closed issues that have the needs-discussion label
+    if: >
+      contains(toJSON(github.event.issue.labels.*.name), 'devin:needs-discussion')
+    steps:
+      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests pyyaml
+
+      - name: Capture architectural decision
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          DEVIN_ORG_ID: ${{ secrets.DEVIN_ORG_ID }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          PYTHONPATH: ${{ github.workspace }}/scripts/devin_automation
+        run: python scripts/devin_automation/decision_capture.py
