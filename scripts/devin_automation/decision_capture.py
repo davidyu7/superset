@@ -38,7 +38,7 @@ from typing import Any
 
 import requests
 import yaml
-from devin_client import DevinClient
+from devin_client import DevinClient, DevinClientError
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -50,6 +50,21 @@ CONFIG_PATH = SCRIPT_DIR / "config.yaml"
 def load_config() -> dict[str, Any]:
     with open(CONFIG_PATH) as f:
         return yaml.safe_load(f)
+
+
+def _resolve_folder_id(
+    client: DevinClient,
+    folder_name: str,
+) -> str | None:
+    """Look up a knowledge folder by name."""
+    try:
+        folders = client.list_knowledge_folders()
+        for folder in folders:
+            if folder.get("name") == folder_name:
+                return folder.get("folder_id")
+    except DevinClientError:
+        logger.warning("Could not list knowledge folders")
+    return None
 
 
 _GH_API = "https://api.github.com"
@@ -315,6 +330,11 @@ def run_capture(
 
     max_acu: int = config.get("max_acu_limit", 10)
 
+    folder_name: str = config.get("knowledge_folders", {}).get(
+        "architectural_decision", "devin-architectural-decisions"
+    )
+    folder_id = _resolve_folder_id(client, folder_name)
+
     linked_prs = _find_linked_prs(repo, issue_number, github_token)
     if linked_prs:
         logger.info(
@@ -380,14 +400,22 @@ def run_capture(
     note_name = f"architectural-decision:{repo}#{issue_number}: {short_title}"
     note_trigger = f"Precedent for issues related to: {topic_keywords}"
 
-    note = client.create_knowledge_note(
-        name=note_name,
-        body=note_body,
-        trigger=note_trigger,
-        pinned_repo=repo,
-    )
-    note_id = note.get("note_id", note.get("id", "unknown"))
-    logger.info("Knowledge note created: %s (id=%s)", note_name, note_id)
+    try:
+        note = client.create_knowledge_note(
+            name=note_name,
+            body=note_body,
+            trigger=note_trigger,
+            pinned_repo=repo,
+            folder_id=folder_id,
+        )
+        note_id = note.get("note_id", note.get("id", "unknown"))
+        logger.info(
+            "Knowledge note created: %s (id=%s)",
+            note_name,
+            note_id,
+        )
+    except DevinClientError:
+        logger.exception("Failed to create knowledge note after session completed")
 
 
 def main() -> None:
