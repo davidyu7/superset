@@ -61,6 +61,13 @@ max_acu_limit: 10
 poll_interval_seconds: 30
 poll_max_attempts: 120
 
+# ── Decision capture exclusions ──
+# PRs that ONLY touch these path prefixes are skipped for decision capture
+# (they are automation/infra changes, not product architectural decisions)
+decision_capture_exclude_paths:
+  - "scripts/devin_automation/"
+  - ".github/workflows/devin-"
+
 # ── Comment marker ──
 # Hidden HTML marker for upsert-by-marker pattern (modeled on superset-translations-comment.yml)
 comment_marker: "<!-- devin-bot -->"
