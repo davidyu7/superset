@@ -854,7 +854,7 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
         """
         Method for dynamic `allows_alias_in_select`.
 
-        In Dremio this atribute is version-dependent, so Superset needs to inspect the
+        In Dremio this attribute is version-dependent, so Superset needs to inspect the
         database configuration in order to determine it. This method allows engine-specs
         to define dynamic values for the attribute.
         """
