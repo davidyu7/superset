@@ -684,7 +684,7 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
             expires_on=datetime.now() + timedelta(minutes=5),
         )
         # We need to commit here because we're going to raise an exception, which will
-        # revert any non-commited changes.
+        # revert any non-committed changes.
         db.session.commit()  # pylint: disable=consider-using-transaction
 
         # The state is passed to the OAuth2 provider, and sent back to Superset after
