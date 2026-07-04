@@ -39,7 +39,7 @@ jobs:
       - name: Install dependencies
         run: pip install requests pyyaml
 
-      - name: Resolve issue number
+      - name: Resolve issue and check for duplicate triage
         id: issue
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
@@ -52,11 +52,23 @@ jobs:
               repo: context.repo.repo,
               issue_number: issueNumber,
             });
+            // Skip if triage is already in progress (deduplication)
+            const labels = issue.labels.map(l => l.name);
+            const alreadyTriaging = labels.includes('devin:triage-in-progress');
+            const alreadyTriaged = labels.includes('devin:needs-discussion')
+              || labels.includes('devin:pr-opened');
+            if (alreadyTriaging || alreadyTriaged) {
+              core.info(`Issue #${issueNumber} already has triage label; skipping.`);
+              core.setOutput('skip', 'true');
+            } else {
+              core.setOutput('skip', 'false');
+            }
             core.setOutput('number', issue.number);
             core.setOutput('title', issue.title);
             core.setOutput('body', issue.body || '');
 
       - name: Run triage
+        if: steps.issue.outputs.skip != 'true'
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           DEVIN_ORG_ID: ${{ secrets.DEVIN_ORG_ID }}

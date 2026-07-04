@@ -429,7 +429,7 @@ def _handle_autonomous(
 
     final = client.poll_session(impl_id, interval=poll_interval, max_attempts=poll_max)
     pull_requests: list[dict[str, Any]] = final.get("pull_requests", [])
-    pr_url = pull_requests[0]["pr_url"] if pull_requests else None
+    pr_url = pull_requests[0].get("pr_url") if pull_requests else None
 
     phase = "PR opened" if pr_url else "Implementation complete"
     _upsert_issue_comment(
