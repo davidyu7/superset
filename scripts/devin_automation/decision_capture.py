@@ -22,13 +22,14 @@ Starts a Devin session that:
   1. Reads the closed issue + its discussion thread.
   2. Finds linked/merged PRs and reads their diffs and review comments
      to capture implicit decisions from the code itself.
-  3. Summarizes the final decision in SIP terms.
-  4. Writes an ``architectural-decision`` knowledge note via the REST API
-     so future triage sessions can find precedent.
+  3. Returns the decision as **structured output** (JSON).
+  4. The script then creates the ``architectural-decision`` knowledge note
+     via the REST API directly -- no in-session approval needed.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import pathlib
@@ -125,6 +126,52 @@ def _build_pr_context(linked_prs: list[dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
+DECISION_OUTPUT_SCHEMA: dict[str, Any] = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "required": [
+        "short_title",
+        "topic_keywords",
+        "motivation",
+        "proposed_change",
+        "new_interfaces",
+        "new_dependencies",
+        "migration_plan",
+        "rejected_alternatives",
+        "implicit_decisions",
+    ],
+    "properties": {
+        "short_title": {
+            "type": "string",
+            "description": (
+                "Concise slug for the decision (e.g. presto-parameter-validation)"
+            ),
+        },
+        "topic_keywords": {
+            "type": "string",
+            "description": (
+                "Comma-separated keywords for future"
+                " search (e.g. Presto, SQL injection)"
+            ),
+        },
+        "motivation": {"type": "string"},
+        "proposed_change": {"type": "string"},
+        "new_interfaces": {"type": "string"},
+        "new_dependencies": {"type": "string"},
+        "migration_plan": {"type": "string"},
+        "rejected_alternatives": {"type": "string"},
+        "implicit_decisions": {
+            "type": "string",
+            "description": (
+                "Architectural decisions implied by"
+                " code changes, review comments,"
+                " or patterns chosen in linked PRs"
+            ),
+        },
+    },
+}
+
+
 def _build_capture_prompt(
     repo: str,
     issue_number: int,
@@ -182,17 +229,28 @@ Capture the architectural decision from issue #{issue_number} in {repo}.
    (from code changes, review comments, patterns chosen) into a single
    coherent summary.
 
-5. Create an ``architectural-decision`` knowledge note via the Devin
-   knowledge API with:
-   - ``name``: "architectural-decision:{repo}#{issue_number}: {{short_title}}"
-   - ``trigger``: "Precedent for issues related to: {{topic_keywords}}"
-   - ``pinned_repo``: "{repo}"
-   - ``body``: The SIP-structured summary including both explicit and
-     implicit decisions
-
-6. The note should be findable by future triage sessions searching for
-   ``architectural-decision`` in the knowledge base.
+5. Return your findings via the structured output tool. Do NOT create
+   any knowledge notes yourself -- the caller will handle that.
+   Do NOT ask any clarifying questions -- just do your best with the
+   information available.
 """
+
+
+def _build_note_body(decision: dict[str, Any]) -> str:
+    """Format the structured decision output as a SIP-structured note body."""
+    sections = [
+        ("Motivation", decision.get("motivation", "N/A")),
+        ("Proposed Change", decision.get("proposed_change", "N/A")),
+        ("New or Changed Public Interfaces", decision.get("new_interfaces", "N/A")),
+        ("New Dependencies", decision.get("new_dependencies", "N/A")),
+        ("Migration Plan and Compatibility", decision.get("migration_plan", "N/A")),
+        ("Rejected Alternatives", decision.get("rejected_alternatives", "N/A")),
+        (
+            "Implicit Decisions (from code/reviews)",
+            decision.get("implicit_decisions", "N/A"),
+        ),
+    ]
+    return "\n\n".join(f"## {title}\n{body}" for title, body in sections)
 
 
 def run_capture(
@@ -223,6 +281,8 @@ def run_capture(
     session = client.create_session(
         prompt=prompt,
         repos=[repo],
+        structured_output_schema=DECISION_OUTPUT_SCHEMA,
+        structured_output_required=True,
         tags=["decision-capture", f"issue-{issue_number}"],
         max_acu_limit=max_acu,
         title=f"Decision capture: {repo}#{issue_number}",
@@ -248,6 +308,30 @@ def run_capture(
     status = final.get("status", "unknown")
     detail = final.get("status_detail", "unknown")
     logger.info("Session ended: status=%s detail=%s", status, detail)
+
+    # ── Extract structured output and create knowledge note via REST ───
+    decision: dict[str, Any] | None = final.get("structured_output")
+    if not decision:
+        logger.error("Session ended without structured output")
+        sys.exit(1)
+
+    logger.info("Decision output: %s", json.dumps(decision, indent=2))
+
+    short_title: str = decision.get("short_title", "unknown")
+    topic_keywords: str = decision.get("topic_keywords", "")
+    note_body = _build_note_body(decision)
+
+    note_name = f"architectural-decision:{repo}#{issue_number}: {short_title}"
+    note_trigger = f"Precedent for issues related to: {topic_keywords}"
+
+    note = client.create_knowledge_note(
+        name=note_name,
+        body=note_body,
+        trigger=note_trigger,
+        pinned_repo=repo,
+    )
+    note_id = note.get("note_id", note.get("id", "unknown"))
+    logger.info("Knowledge note created: %s (id=%s)", note_name, note_id)
 
 
 def main() -> None:
